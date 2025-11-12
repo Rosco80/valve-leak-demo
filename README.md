@@ -6,7 +6,7 @@
 
 ## Access the Demo
 
-**Demo URL:** `[TO BE PROVIDED AFTER DEPLOYMENT]`
+**Demo URL:** `https://valve-leak-demo.streamlit.app/`
 
 Simply open the URL in your web browser - no installation required!
 
@@ -131,4 +131,5 @@ All questions can be addressed during Monday presentation or via email.
 ---
 
 **Note:** This system is designed for acoustic emission (AE) sensor data at 36-44 kHz. Multi-modal support (AE + Pressure + Vibration) is planned for Phase 2.
+
 
