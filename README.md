@@ -104,52 +104,6 @@ These are real valve data from the training dataset.
 
 ---
 
-## What Happens Next?
-
-This is a **FREE PREVIEW** demonstration (not part of the official Week 1-4 pilot).
-
-### If You Decide to Proceed with the 4-Week Pilot:
-
-**Week 1** (Infrastructure Audit) - $375
-- System architecture review
-- Data quality assessment
-- Technology stack validation
-
-**Week 2** (Model Training) - $375
-- 20 engineered features (statistical + spectral + temporal)
-- Data augmentation (100 → 140 leak samples with client's additional data)
-- Ensemble models (XGBoost + Random Forest)
-- Target: 85-88% accuracy
-
-**Week 3** (System Integration) - $375
-- Real-time inference pipeline
-- CLI tool for batch processing
-- JSON/CSV output formats
-
-**Week 4** (Dashboard & Deployment) - $375
-- Streamlit dashboard with leak detection mode
-- Visualizations and monitoring
-- Deployment documentation
-
-**Total Investment:** $1,500
-**Timeline:** 4 weeks (Nov 18 - Dec 13, 2025)
-
----
-
-## Decision Point
-
-### Option A: Proceed with Full Pilot ✅
-- Proven concept: 81.8% accuracy with basic features validates approach
-- High probability of hitting 85-88% target with full feature engineering
-- Structured milestones with weekly deliverables
-
-### Option B: End After Preview
-- Keep this free demo as-is
-- No further development
-- No cost
-
----
-
 ## Support & Questions
 
 **During Demo:**
@@ -177,3 +131,4 @@ All questions can be addressed during Monday presentation or via email.
 ---
 
 **Note:** This system is designed for acoustic emission (AE) sensor data at 36-44 kHz. Multi-modal support (AE + Pressure + Vibration) is planned for Phase 2.
+
