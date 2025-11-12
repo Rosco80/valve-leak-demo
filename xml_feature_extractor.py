@@ -41,8 +41,19 @@ def parse_curves_xml(xml_content: str) -> Optional[pd.DataFrame]:
         raw_headers = [c.find('ss:Data', XML_NS).text or '' for c in header_cells]
         full_header_list = ["Crank Angle"] + [re.sub(r'\s+', ' ', name.strip()) for name in raw_headers[1:]]
 
-        # Extract data (rows 6 onwards)
-        data = [[cell.find('ss:Data', XML_NS).text for cell in r.findall('ss:Cell', XML_NS)] for r in rows[6:]]
+        # Extract data (skip rows 6-11 which contain summary rows like "Overall", "Median Period", etc.)
+        # Start from row 12 to get actual crank angle waveform data
+        raw_data = [[cell.find('ss:Data', XML_NS).text for cell in r.findall('ss:Cell', XML_NS)] for r in rows[12:]]
+
+        # Filter to only include rows with numeric crank angles (actual waveform data)
+        data = []
+        for row in raw_data:
+            if row and row[0]:  # Check if row has data
+                try:
+                    float(row[0])  # Verify first column (crank angle) is numeric
+                    data.append(row)
+                except (ValueError, TypeError):
+                    continue  # Skip non-numeric rows (metadata/summary rows)
 
         if not data:
             return None
@@ -83,13 +94,25 @@ def extract_features_from_xml(xml_content: str, curve_name: Optional[str] = None
 
         # Find AE/Ultrasonic curve column if not specified
         if curve_name is None:
-            # Look for ULTRASONIC or AE column
+            # Priority 1: Look for exact training curve type (ULTRASONIC G 36KHZ - 44KHZ)
             ae_columns = [col for col in df.columns
                          if col != 'Crank Angle' and
-                         ('ULTRASONIC' in col.upper() or 'AE' in col.upper() or 'KHZ' in col.upper())]
+                         'ULTRASONIC' in col.upper() and '36KHZ' in col.upper() and '44KHZ' in col.upper()]
 
+            # Priority 2: Any 36KHZ ultrasonic curve
             if not ae_columns:
-                # No AE column found, use first non-crank-angle column
+                ae_columns = [col for col in df.columns
+                             if col != 'Crank Angle' and
+                             'ULTRASONIC' in col.upper() and '36KHZ' in col.upper()]
+
+            # Priority 3: Any ultrasonic/AE curve
+            if not ae_columns:
+                ae_columns = [col for col in df.columns
+                             if col != 'Crank Angle' and
+                             ('ULTRASONIC' in col.upper() or 'AE' in col.upper() or 'KHZ' in col.upper())]
+
+            # Priority 4: Fallback to first non-crank-angle column
+            if not ae_columns:
                 ae_columns = [col for col in df.columns if col != 'Crank Angle']
 
             if not ae_columns:
@@ -98,12 +121,44 @@ def extract_features_from_xml(xml_content: str, curve_name: Optional[str] = None
             curve_name = ae_columns[0]
 
         # Extract amplitude values
-        amplitude_values = df[curve_name].dropna()
+        amplitude_values_full = df[curve_name].dropna()
 
-        if len(amplitude_values) == 0:
+        if len(amplitude_values_full) == 0:
             return None
 
-        # Calculate 8 features
+        # EVENT-LEVEL FILTERING: Extract only significant amplitude events to match CSV training data format
+        # The CSV training data contains sparse event points (peaks/significant events), not full waveforms
+
+        # Strategy: Use 90th percentile to extract only the strongest events
+        # This mimics the CSV format which contains only significant amplitude spikes
+        threshold_percentile = amplitude_values_full.quantile(0.90)
+
+        # Also try adaptive threshold: mean + 2*std (statistical outliers)
+        threshold_adaptive = amplitude_values_full.mean() + 2 * amplitude_values_full.std()
+
+        # Use the higher of the two thresholds to be more selective
+        threshold = max(threshold_percentile, threshold_adaptive)
+
+        # If max threshold is too low, use absolute minimum (3 G) for realistic event detection
+        threshold = max(threshold, 3.0)
+
+        # Get indices of significant events
+        significant_indices = amplitude_values_full[amplitude_values_full >= threshold].index
+
+        # Safety check: ensure we have enough event points
+        if len(significant_indices) < 10:
+            # Fallback: use top 15% of amplitude values
+            threshold = amplitude_values_full.quantile(0.85)
+            significant_indices = amplitude_values_full[amplitude_values_full >= threshold].index
+
+        # Extract only significant event amplitudes (matching CSV event-level format)
+        amplitude_values = amplitude_values_full.loc[significant_indices]
+
+        if len(amplitude_values) == 0:
+            # Final fallback: use all values if filtering removes everything
+            amplitude_values = amplitude_values_full
+
+        # Calculate 8 features from event-level data
         features = {
             'mean_amplitude': float(amplitude_values.mean()),
             'max_amplitude': float(amplitude_values.max()),

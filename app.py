@@ -1,6 +1,6 @@
 """
 Valve Leak Detection - Cloud Demo
-Streamlit app proof-of-concept demonstration
+Streamlit app for Monday proof-of-concept demonstration
 """
 
 import streamlit as st
@@ -76,7 +76,7 @@ def load_model():
         return None, None
 
 # Header
-st.markdown('<div class="main-header">Valve Leak Detection System</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🔧 Valve Leak Detection System</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">AI-Powered Proof-of-Concept Demo | Acoustic Emission Analysis</div>', unsafe_allow_html=True)
 
 # Introduction
@@ -208,10 +208,21 @@ if uploaded_file is not None:
 
                             curve_to_plot = ae_cols[0] if ae_cols else curve_cols[0]
 
+                            # Filter outliers for better visualization using IQR method
+                            q1 = df[curve_to_plot].quantile(0.25)
+                            q3 = df[curve_to_plot].quantile(0.75)
+                            iqr = q3 - q1
+                            lower_bound = q1 - 3 * iqr
+                            upper_bound = q3 + 3 * iqr
+
+                            # Clip extreme outliers for better graph scaling
+                            df_plot = df.copy()
+                            df_plot[curve_to_plot] = df[curve_to_plot].clip(lower=lower_bound, upper=upper_bound)
+
                             fig = go.Figure()
                             fig.add_trace(go.Scatter(
-                                x=df['Crank Angle'],
-                                y=df[curve_to_plot],
+                                x=df_plot['Crank Angle'],
+                                y=df_plot[curve_to_plot],
                                 mode='lines',
                                 name=curve_to_plot,
                                 line=dict(color='#1f77b4', width=2)
@@ -222,21 +233,29 @@ if uploaded_file is not None:
                                 y=features['mean_amplitude'],
                                 line_dash="dash",
                                 line_color="green",
-                                annotation_text=f"Mean: {features['mean_amplitude']:.1f} G"
+                                annotation_text=f"Mean: {features['mean_amplitude']:.1f} G",
+                                annotation_position="right"
                             )
                             fig.add_hline(
-                                y=features['min_amplitude'],
+                                y=features['median_amplitude'],
                                 line_dash="dot",
                                 line_color="orange",
-                                annotation_text=f"Min: {features['min_amplitude']:.1f} G"
+                                annotation_text=f"Median: {features['median_amplitude']:.1f} G",
+                                annotation_position="right"
                             )
+
+                            # Calculate reasonable y-axis range
+                            y_min = max(df_plot[curve_to_plot].min() - 2, 0)
+                            y_max = df_plot[curve_to_plot].max() + 5
 
                             fig.update_layout(
                                 title="AE Amplitude vs Crank Angle",
                                 xaxis_title="Crank Angle (degrees)",
                                 yaxis_title="Amplitude (G)",
+                                yaxis_range=[y_min, y_max],
                                 height=400,
-                                hovermode='x unified'
+                                hovermode='x unified',
+                                showlegend=False
                             )
 
                             st.plotly_chart(fig, use_container_width=True)
@@ -333,10 +352,8 @@ else:
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; font-size: 0.9rem;'>
-    <p><strong>Proof-of-Concept Demo</strong> | Preview</p>
+    <p><strong>Monday Proof-of-Concept Demo</strong> | Free Preview (Not part of Week 1-4 pilot)</p>
     <p>AI-Powered Valve Leak Detection | Acoustic Emission Analysis</p>
-    <p>Next Steps: Enhanced model: 20 features + Ensemble models → 85-88% accuracy target</p>
+    <p>Next Steps: Week 2-4 Pilot → 20 features + Ensemble models → 85-88% accuracy target</p>
 </div>
 """, unsafe_allow_html=True)
-
-
