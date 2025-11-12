@@ -1,0 +1,28 @@
+{
+  "feature_names": [
+    "mean_amplitude",
+    "max_amplitude",
+    "min_amplitude",
+    "std_amplitude",
+    "amplitude_range",
+    "median_amplitude",
+    "crank_angle_at_max",
+    "sample_count"
+  ],
+  "num_features": 8,
+  "training_samples": {
+    "leak": 7,
+    "normal": 46,
+    "total": 53
+  },
+  "model_type": "RandomForestClassifier",
+  "parameters": {
+    "n_estimators": 100,
+    "max_depth": 10,
+    "class_weight": "balanced"
+  },
+  "class_labels": {
+    "0": "Normal",
+    "1": "Leak"
+  }
+}
