@@ -76,7 +76,7 @@ def load_model():
         return None, None
 
 # Header
-st.markdown('<div class="main-header">🔧 Valve Leak Detection System</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">Valve Leak Detection System</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">AI-Powered Proof-of-Concept Demo | Acoustic Emission Analysis</div>', unsafe_allow_html=True)
 
 # Introduction
@@ -338,4 +338,5 @@ st.markdown("""
     <p>Next Steps: Enhanced model: 20 features + Ensemble models → 85-88% accuracy target</p>
 </div>
 """, unsafe_allow_html=True)
+
 
