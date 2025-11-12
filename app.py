@@ -1,6 +1,6 @@
 """
 Valve Leak Detection - Cloud Demo
-Streamlit app for Monday proof-of-concept demonstration
+Streamlit app proof-of-concept demonstration
 """
 
 import streamlit as st
@@ -333,8 +333,9 @@ else:
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; font-size: 0.9rem;'>
-    <p><strong>Monday Proof-of-Concept Demo</strong> | Free Preview (Not part of Week 1-4 pilot)</p>
+    <p><strong>Proof-of-Concept Demo</strong> | Preview</p>
     <p>AI-Powered Valve Leak Detection | Acoustic Emission Analysis</p>
-    <p>Next Steps: Week 2-4 Pilot → 20 features + Ensemble models → 85-88% accuracy target</p>
+    <p>Next Steps: Enhanced model: 20 features + Ensemble models → 85-88% accuracy target</p>
 </div>
 """, unsafe_allow_html=True)
+
