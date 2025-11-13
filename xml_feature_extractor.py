@@ -5,9 +5,8 @@ Parses Curves XML files and extracts 8 features for model inference
 
 import xml.etree.ElementTree as ET
 import pandas as pd
-import numpy as np
 import re
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 
 # XML namespace for Microsoft Office Spreadsheet format
 XML_NS = {'ss': 'urn:schemas-microsoft-com:office:spreadsheet'}
@@ -34,16 +33,27 @@ def parse_curves_xml(xml_content: str) -> Optional[pd.DataFrame]:
             return None
 
         table = ws.find('.//ss:Table', XML_NS)
+        if table is None:
+            return None
+
         rows = table.findall('ss:Row', XML_NS)
 
         # Extract headers (row 1, index 1 in zero-indexed list)
         header_cells = rows[1].findall('ss:Cell', XML_NS)
-        raw_headers = [c.find('ss:Data', XML_NS).text or '' for c in header_cells]
-        full_header_list = ["Crank Angle"] + [re.sub(r'\s+', ' ', name.strip()) for name in raw_headers[1:]]
+        data_elements = [c.find('ss:Data', XML_NS) for c in header_cells]
+        raw_headers = [(elem.text if elem is not None and elem.text else '') for elem in data_elements]
+        full_header_list = ["Crank Angle"] + [re.sub(r'\s+', ' ', name.strip()) for name in raw_headers[1:] if name]
 
         # Extract data (skip rows 6-11 which contain summary rows like "Overall", "Median Period", etc.)
         # Start from row 12 to get actual crank angle waveform data
-        raw_data = [[cell.find('ss:Data', XML_NS).text for cell in r.findall('ss:Cell', XML_NS)] for r in rows[12:]]
+        raw_data = []
+        for r in rows[12:]:
+            row_cells = r.findall('ss:Cell', XML_NS)
+            row_data = []
+            for cell in row_cells:
+                data_elem = cell.find('ss:Data', XML_NS)
+                row_data.append(data_elem.text if data_elem is not None else None)
+            raw_data.append(row_data)
 
         # Filter to only include rows with numeric crank angles (actual waveform data)
         data = []
@@ -159,14 +169,20 @@ def extract_features_from_xml(xml_content: str, curve_name: Optional[str] = None
             amplitude_values = amplitude_values_full
 
         # Calculate 8 features from event-level data
+        mean_val = amplitude_values.mean()
+        max_val = amplitude_values.max()
+        min_val = amplitude_values.min()
+        std_val = amplitude_values.std()
+        median_val = amplitude_values.median()
+
         features = {
-            'mean_amplitude': float(amplitude_values.mean()),
-            'max_amplitude': float(amplitude_values.max()),
-            'min_amplitude': float(amplitude_values.min()),
-            'std_amplitude': float(amplitude_values.std()),
-            'amplitude_range': float(amplitude_values.max() - amplitude_values.min()),
-            'median_amplitude': float(amplitude_values.median()),
-            'crank_angle_at_max': float(df.loc[amplitude_values.idxmax(), 'Crank Angle']),
+            'mean_amplitude': float(mean_val),
+            'max_amplitude': float(max_val),
+            'min_amplitude': float(min_val),
+            'std_amplitude': float(std_val),  # type: ignore
+            'amplitude_range': float(max_val - min_val),
+            'median_amplitude': float(median_val),
+            'crank_angle_at_max': float(df.loc[amplitude_values.idxmax(), 'Crank Angle']),  # type: ignore[arg-type]
             'sample_count': int(len(amplitude_values))
         }
 
@@ -272,7 +288,7 @@ def extract_all_cylinders_features(xml_content: str):
         return None
 
 
-def get_curve_info(xml_content: str) -> Dict[str, any]:
+def get_curve_info(xml_content: str) -> Dict[str, Any]:
     """
     Extract metadata from Curves XML file.
 
