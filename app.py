@@ -8,7 +8,7 @@ import joblib
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from xml_feature_extractor import extract_features_from_xml, parse_curves_xml, get_curve_info
+from xml_feature_extractor import extract_features_from_xml, parse_curves_xml, get_curve_info, extract_all_cylinders_features
 import os
 
 # Page configuration
@@ -76,7 +76,7 @@ def load_model():
         return None, None
 
 # Header
-st.markdown('<div class="main-header">Valve Leak Detection System</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🔧 Valve Leak Detection System</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">AI-Powered Proof-of-Concept Demo | Acoustic Emission Analysis</div>', unsafe_allow_html=True)
 
 # Introduction
@@ -140,12 +140,12 @@ if uploaded_file is not None:
     st.markdown("---")
 
     # Analyze button
-    if st.button("🔍 Analyze Valve", type="primary", use_container_width=True):
-        with st.spinner("Extracting features and running AI model..."):
-            # Extract features
-            features = extract_features_from_xml(xml_content)
+    if st.button("🔍 Analyze All Cylinders", type="primary", use_container_width=True):
+        with st.spinner("Extracting features from all cylinders and running AI model..."):
+            # Extract features from all cylinders
+            all_cylinder_data = extract_all_cylinders_features(xml_content)
 
-            if features is None:
+            if all_cylinder_data is None or len(all_cylinder_data) == 0:
                 st.error("❌ Failed to extract features from XML file. Please check file format.")
             else:
                 # Load model
@@ -154,158 +154,171 @@ if uploaded_file is not None:
                 if model is None:
                     st.error("❌ Failed to load model. Please contact support.")
                 else:
-                    # Prepare features for prediction
-                    feature_df = pd.DataFrame([features])
-                    feature_scaled = scaler.transform(feature_df)
+                    # Make predictions for each valve
+                    for valve_data in all_cylinder_data:
+                        feature_df = pd.DataFrame([valve_data['features']])
+                        feature_scaled = scaler.transform(feature_df)
 
-                    # Make prediction
-                    prediction = model.predict(feature_scaled)[0]
-                    probabilities = model.predict_proba(feature_scaled)[0]
+                        prediction = model.predict(feature_scaled)[0]
+                        probabilities = model.predict_proba(feature_scaled)[0]
 
-                    # Display result
-                    st.markdown("## 🎯 Analysis Result")
+                        valve_data['prediction'] = prediction
+                        valve_data['confidence'] = probabilities[prediction] * 100
+                        valve_data['leak_probability'] = probabilities[1] * 100
 
-                    if prediction == 1:  # Leak
+                    # Group results by cylinder
+                    cylinders = {}
+                    for valve_data in all_cylinder_data:
+                        cyl_num = valve_data['cylinder_num']
+                        if cyl_num not in cylinders:
+                            cylinders[cyl_num] = []
+                        cylinders[cyl_num].append(valve_data)
+
+                    # Calculate cylinder-level status (if ANY valve leaks, cylinder has leak)
+                    cylinder_status = {}
+                    for cyl_num, valves in cylinders.items():
+                        max_leak_prob = max(v['leak_probability'] for v in valves)
+                        has_leak = any(v['prediction'] == 1 for v in valves)
+                        cylinder_status[cyl_num] = {
+                            'has_leak': has_leak,
+                            'max_leak_prob': max_leak_prob,
+                            'leak_count': sum(1 for v in valves if v['prediction'] == 1)
+                        }
+
+                    # Display overall summary
+                    st.markdown("## 🎯 Multi-Cylinder Analysis Results")
+
+                    leaking_cylinders = [cyl for cyl, status in cylinder_status.items() if status['has_leak']]
+
+                    if leaking_cylinders:
                         st.markdown(
-                            f'<div class="result-box leak-detected">⚠️ LEAK DETECTED</div>',
+                            f'<div class="result-box leak-detected">⚠️ LEAKS DETECTED IN {len(leaking_cylinders)} CYLINDER(S)</div>',
                             unsafe_allow_html=True
                         )
-                        confidence = probabilities[1] * 100
+                        st.error(f"**Leaking Cylinders:** {', '.join([f'Cylinder {c}' for c in sorted(leaking_cylinders)])}")
+                        st.warning("**Recommendation:** Schedule immediate maintenance inspection for affected cylinders.")
+                    else:
                         st.markdown(
-                            f'<div class="confidence-text" style="text-align: center;">Confidence: {confidence:.1f}%</div>',
+                            f'<div class="result-box normal-detected">✅ ALL CYLINDERS NORMAL</div>',
                             unsafe_allow_html=True
                         )
-
-                        st.warning("**Recommendation:** This valve shows leak signatures. Schedule maintenance inspection.")
-                    else:  # Normal
-                        st.markdown(
-                            f'<div class="result-box normal-detected">✅ NORMAL OPERATION</div>',
-                            unsafe_allow_html=True
-                        )
-                        confidence = probabilities[0] * 100
-                        st.markdown(
-                            f'<div class="confidence-text" style="text-align: center;">Confidence: {confidence:.1f}%</div>',
-                            unsafe_allow_html=True
-                        )
-
-                        st.success("**Status:** Valve operating within normal parameters.")
+                        st.success("**Status:** All valves operating within normal parameters.")
 
                     st.markdown("---")
 
-                    # Visualization and features in columns
-                    col_left, col_right = st.columns([3, 2])
+                    # Display per-cylinder results
+                    st.subheader("📊 Cylinder-by-Cylinder Breakdown")
 
-                    with col_left:
-                        st.subheader("📊 Waveform Visualization")
+                    for cyl_num in sorted(cylinders.keys()):
+                        valves = cylinders[cyl_num]
+                        status = cylinder_status[cyl_num]
 
-                        # Parse and plot waveform
-                        df = parse_curves_xml(xml_content)
-                        if df is not None:
-                            # Get first AE curve
-                            curve_cols = [col for col in df.columns if col != 'Crank Angle']
-                            ae_cols = [col for col in curve_cols
-                                      if 'ULTRASONIC' in col.upper() or 'AE' in col.upper() or 'KHZ' in col.upper()]
-
-                            curve_to_plot = ae_cols[0] if ae_cols else curve_cols[0]
-
-                            # Filter outliers for better visualization using IQR method
-                            q1 = df[curve_to_plot].quantile(0.25)
-                            q3 = df[curve_to_plot].quantile(0.75)
-                            iqr = q3 - q1
-                            lower_bound = q1 - 3 * iqr
-                            upper_bound = q3 + 3 * iqr
-
-                            # Clip extreme outliers for better graph scaling
-                            df_plot = df.copy()
-                            df_plot[curve_to_plot] = df[curve_to_plot].clip(lower=lower_bound, upper=upper_bound)
-
-                            fig = go.Figure()
-                            fig.add_trace(go.Scatter(
-                                x=df_plot['Crank Angle'],
-                                y=df_plot[curve_to_plot],
-                                mode='lines',
-                                name=curve_to_plot,
-                                line=dict(color='#1f77b4', width=2)
-                            ))
-
-                            # Add horizontal lines for key features
-                            fig.add_hline(
-                                y=features['mean_amplitude'],
-                                line_dash="dash",
-                                line_color="green",
-                                annotation_text=f"Mean: {features['mean_amplitude']:.1f} G",
-                                annotation_position="right"
-                            )
-                            fig.add_hline(
-                                y=features['median_amplitude'],
-                                line_dash="dot",
-                                line_color="orange",
-                                annotation_text=f"Median: {features['median_amplitude']:.1f} G",
-                                annotation_position="right"
-                            )
-
-                            # Calculate reasonable y-axis range
-                            y_min = max(df_plot[curve_to_plot].min() - 2, 0)
-                            y_max = df_plot[curve_to_plot].max() + 5
-
-                            fig.update_layout(
-                                title="AE Amplitude vs Crank Angle",
-                                xaxis_title="Crank Angle (degrees)",
-                                yaxis_title="Amplitude (G)",
-                                yaxis_range=[y_min, y_max],
-                                height=400,
-                                hovermode='x unified',
-                                showlegend=False
-                            )
-
-                            st.plotly_chart(fig, use_container_width=True)
+                        # Cylinder header with color coding
+                        if status['has_leak']:
+                            st.markdown(f"### 🔴 Cylinder {cyl_num} - LEAK DETECTED ({status['leak_count']} valve(s))")
                         else:
-                            st.error("Could not visualize waveform")
+                            st.markdown(f"### 🟢 Cylinder {cyl_num} - Normal")
 
-                    with col_right:
-                        st.subheader("🔢 Extracted Features")
+                        # Create table for this cylinder's valves
+                        valve_results = []
+                        for valve in valves:
+                            status_emoji = "⚠️ LEAK" if valve['prediction'] == 1 else "✅ Normal"
+                            valve_results.append({
+                                "Valve Position": valve['valve_name'],
+                                "Status": status_emoji,
+                                "Leak Probability": f"{valve['leak_probability']:.1f}%",
+                                "Mean Amplitude": f"{valve['features']['mean_amplitude']:.2f} G",
+                                "Max Amplitude": f"{valve['features']['max_amplitude']:.2f} G"
+                            })
 
-                        # Features table with highlighting
-                        feature_display = {
-                            "Feature": [
-                                "Mean Amplitude",
-                                "Min Amplitude",
-                                "Median Amplitude",
-                                "Max Amplitude",
-                                "Std Deviation",
-                                "Amplitude Range",
-                                "Crank Angle @ Max",
-                                "Sample Count"
-                            ],
-                            "Value": [
-                                f"{features['mean_amplitude']:.2f} G",
-                                f"{features['min_amplitude']:.2f} G",
-                                f"{features['median_amplitude']:.2f} G",
-                                f"{features['max_amplitude']:.2f} G",
-                                f"{features['std_amplitude']:.2f} G",
-                                f"{features['amplitude_range']:.2f} G",
-                                f"{features['crank_angle_at_max']:.1f}°",
-                                f"{features['sample_count']}"
-                            ],
-                            "Importance": [
-                                "⭐⭐⭐",  # Mean
-                                "⭐⭐⭐⭐⭐",  # Min (most important)
-                                "⭐⭐⭐⭐",  # Median
-                                "⭐⭐",  # Max
-                                "⭐",  # Std
-                                "⭐",  # Range
-                                "⭐",  # Crank angle
-                                "⭐"   # Count
-                            ]
-                        }
+                        df_results = pd.DataFrame(valve_results)
+
+                        # Color code the dataframe
+                        def highlight_leaks(row):
+                            if "LEAK" in row['Status']:
+                                return ['background-color: #ffebee'] * len(row)
+                            return [''] * len(row)
 
                         st.dataframe(
-                            pd.DataFrame(feature_display),
+                            df_results.style.apply(highlight_leaks, axis=1),
                             hide_index=True,
                             use_container_width=True
                         )
 
-                        st.info("💡 **Key Indicators:** Min and Median amplitude are most important for leak detection (32.5% and 20.8% importance)")
+                        # Add detailed view in expander
+                        with st.expander(f"🔬 Detailed Analysis - Cylinder {cyl_num}"):
+                            for valve in valves:
+                                st.markdown(f"**{valve['valve_name']}** ({valve['valve_position']})")
+
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    st.metric("Leak Probability", f"{valve['leak_probability']:.1f}%")
+                                    st.metric("Mean Amplitude", f"{valve['features']['mean_amplitude']:.2f} G")
+                                    st.metric("Median Amplitude", f"{valve['features']['median_amplitude']:.2f} G")
+                                    st.metric("Min Amplitude", f"{valve['features']['min_amplitude']:.2f} G")
+
+                                with col2:
+                                    st.metric("Confidence", f"{valve['confidence']:.1f}%")
+                                    st.metric("Max Amplitude", f"{valve['features']['max_amplitude']:.2f} G")
+                                    st.metric("Std Deviation", f"{valve['features']['std_amplitude']:.2f} G")
+                                    st.metric("Sample Count", valve['features']['sample_count'])
+
+                                st.markdown("---")
+
+                        st.markdown("")  # Spacing
+
+                    st.markdown("---")
+
+                    # Summary Visualization
+                    st.subheader("📊 Leak Probability Summary - All Cylinders")
+
+                    # Create bar chart showing leak probability for each cylinder
+                    cyl_summary = []
+                    for cyl_num in sorted(cylinders.keys()):
+                        status = cylinder_status[cyl_num]
+                        cyl_summary.append({
+                            'Cylinder': f"Cyl {cyl_num}",
+                            'Max Leak Probability': status['max_leak_prob'],
+                            'Status': 'LEAK' if status['has_leak'] else 'Normal'
+                        })
+
+                    df_summary = pd.DataFrame(cyl_summary)
+
+                    fig = go.Figure()
+
+                    # Color bars based on leak status
+                    colors = ['#c62828' if row['Status'] == 'LEAK' else '#2e7d32'
+                             for _, row in df_summary.iterrows()]
+
+                    fig.add_trace(go.Bar(
+                        x=df_summary['Cylinder'],
+                        y=df_summary['Max Leak Probability'],
+                        marker_color=colors,
+                        text=df_summary['Max Leak Probability'].apply(lambda x: f"{x:.1f}%"),
+                        textposition='outside'
+                    ))
+
+                    # Add threshold line at 50%
+                    fig.add_hline(
+                        y=50,
+                        line_dash="dash",
+                        line_color="orange",
+                        annotation_text="50% Threshold",
+                        annotation_position="right"
+                    )
+
+                    fig.update_layout(
+                        title="Maximum Leak Probability by Cylinder",
+                        xaxis_title="Cylinder",
+                        yaxis_title="Leak Probability (%)",
+                        yaxis_range=[0, 105],
+                        height=400,
+                        showlegend=False
+                    )
+
+                    st.plotly_chart(fig, use_container_width=True)
+
+                    st.info("💡 **Note:** Each cylinder bar shows the HIGHEST leak probability among its 4 valves. Expand individual cylinders above for valve-level details.")
 
                     # Technical details
                     with st.expander("🔬 Technical Details"):
@@ -352,9 +365,8 @@ else:
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; font-size: 0.9rem;'>
-    <p><strong>Proof-of-Concept Demo</strong> | Preview</p>
+    <p><strong>Monday Proof-of-Concept Demo</strong> | Free Preview (Not part of Week 1-4 pilot)</p>
     <p>AI-Powered Valve Leak Detection | Acoustic Emission Analysis</p>
-    <p>Next Steps: Enhancements → 20 features + Ensemble models → 85-88% accuracy target</p>
+    <p>Next Steps: Week 2-4 Pilot → 20 features + Ensemble models → 85-88% accuracy target</p>
 </div>
 """, unsafe_allow_html=True)
-

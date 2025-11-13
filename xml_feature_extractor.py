@@ -177,6 +177,101 @@ def extract_features_from_xml(xml_content: str, curve_name: Optional[str] = None
         return None
 
 
+def extract_all_cylinders_features(xml_content: str):
+    """
+    Extract features from ALL cylinders/valves in an XML file.
+
+    Args:
+        xml_content: XML content string
+
+    Returns:
+        List of dictionaries, each containing:
+        - cylinder_num: Cylinder number (1-N)
+        - valve_position: Valve position code (e.g., 'CS1', 'CD1', 'HS1', 'HD1')
+        - valve_name: Full valve description
+        - column_name: Original XML column name
+        - features: Dictionary of 8 extracted features
+        Returns None if parsing fails
+    """
+    try:
+        # Parse XML
+        df = parse_curves_xml(xml_content)
+        if df is None or len(df) == 0:
+            return None
+
+        # Find all ULTRASONIC columns (36KHZ - 44KHZ preferred)
+        ultrasonic_cols = [col for col in df.columns
+                          if col != 'Crank Angle' and
+                          'ULTRASONIC' in col.upper() and '36KHZ' in col.upper() and '44KHZ' in col.upper()]
+
+        # Fallback to any ultrasonic/AE curve if specific frequency not found
+        if not ultrasonic_cols:
+            ultrasonic_cols = [col for col in df.columns
+                              if col != 'Crank Angle' and
+                              ('ULTRASONIC' in col.upper() or 'AE' in col.upper())]
+
+        if not ultrasonic_cols:
+            return None
+
+        results = []
+
+        for col_name in ultrasonic_cols:
+            # Extract cylinder number and valve position from column name
+            # Format: "C402 - C.3CS1.ULTRASONIC G 36KHZ - 44KHZ (NARROW BAND).3CS1"
+            # We need to extract: cylinder=3, position=CS1
+
+            # Try to find cylinder number pattern (C.1, C.2, C.3, etc.)
+            import re
+            cyl_match = re.search(r'C\.(\d+)([A-Z]{2,3}\d*)', col_name)
+
+            if cyl_match:
+                cylinder_num = int(cyl_match.group(1))
+                valve_pos = cyl_match.group(2)
+            else:
+                # Fallback: try to find any digit pattern
+                digit_match = re.search(r'\.(\d+)', col_name)
+                if digit_match:
+                    cylinder_num = int(digit_match.group(1))
+                    valve_pos = "Unknown"
+                else:
+                    continue  # Skip if can't extract cylinder number
+
+            # Decode valve position
+            valve_position_map = {
+                'CS1': 'Crank End Suction',
+                'CD1': 'Crank End Discharge',
+                'HS1': 'Head End Suction',
+                'HD1': 'Head End Discharge',
+                'CS': 'Crank End Suction',
+                'CD': 'Crank End Discharge',
+                'HS': 'Head End Suction',
+                'HD': 'Head End Discharge'
+            }
+
+            valve_name = valve_position_map.get(valve_pos, valve_pos)
+
+            # Extract features for this specific column
+            features = extract_features_from_xml(xml_content, curve_name=col_name)
+
+            if features is not None:
+                results.append({
+                    'cylinder_num': cylinder_num,
+                    'valve_position': valve_pos,
+                    'valve_name': valve_name,
+                    'column_name': col_name,
+                    'features': features
+                })
+
+        # Sort by cylinder number and valve position
+        results.sort(key=lambda x: (x['cylinder_num'], x['valve_position']))
+
+        return results
+
+    except Exception as e:
+        print(f"Failed to extract all cylinder features: {e}")
+        return None
+
+
 def get_curve_info(xml_content: str) -> Dict[str, any]:
     """
     Extract metadata from Curves XML file.
