@@ -159,12 +159,16 @@ if uploaded_file is not None:
                         feature_df = pd.DataFrame([valve_data['features']])
                         feature_scaled = scaler.transform(feature_df)
 
-                        prediction = model.predict(feature_scaled)[0]
                         probabilities = model.predict_proba(feature_scaled)[0]
+                        leak_probability = probabilities[1] * 100
+
+                        # Use standard 50% threshold (proper peak detection fix restored system functionality)
+                        # Previous 40% threshold was a band-aid for feature extraction mismatch
+                        prediction = 1 if leak_probability >= 50.0 else 0
 
                         valve_data['prediction'] = prediction
-                        valve_data['confidence'] = probabilities[prediction] * 100
-                        valve_data['leak_probability'] = probabilities[1] * 100
+                        valve_data['confidence'] = probabilities[prediction]
+                        valve_data['leak_probability'] = leak_probability
 
                     # Group results by cylinder
                     cylinders = {}

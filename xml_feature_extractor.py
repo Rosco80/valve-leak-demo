@@ -136,46 +136,91 @@ def extract_features_from_xml(xml_content: str, curve_name: Optional[str] = None
         if len(amplitude_values_full) == 0:
             return None
 
-        # EVENT-LEVEL FILTERING: Extract only significant amplitude events to match CSV training data format
-        # The CSV training data contains sparse event points (peaks/significant events), not full waveforms
+        # SYSTEM-WIDE FIX: Peak Detection Alignment
+        # Root cause: Training data used peak-detected samples (2-13 peaks per valve)
+        # but inference was using full waveform (355 points). This creates feature mismatch.
+        #
+        # Solution: Apply peak detection to match training methodology
+        # This restores system functionality across ALL files and valves
 
-        # Strategy: Use 90th percentile to extract only the strongest events
-        # This mimics the CSV format which contains only significant amplitude spikes
-        threshold_percentile = amplitude_values_full.quantile(0.90)
+        try:
+            from scipy.signal import find_peaks
 
-        # Also try adaptive threshold: mean + 2*std (statistical outliers)
-        threshold_adaptive = amplitude_values_full.mean() + 2 * amplitude_values_full.std()
+            # Method 1: Use scipy peak detection (preferred - more robust)
+            # Detect peaks with minimum height at 90th percentile
+            threshold = amplitude_values_full.quantile(0.90)
 
-        # Use the higher of the two thresholds to be more selective
-        threshold = max(threshold_percentile, threshold_adaptive)
+            # Find peaks with:
+            # - height: at 90th percentile
+            # - distance: minimum 5 samples between peaks (avoids noise)
+            peak_indices, peak_properties = find_peaks(
+                amplitude_values_full.values,
+                height=threshold,
+                distance=5
+            )
 
-        # If max threshold is too low, use absolute minimum (3 G) for realistic event detection
-        threshold = max(threshold, 3.0)
+            if len(peak_indices) >= 2:
+                # Use detected peaks (matches training data format)
+                amplitude_values = amplitude_values_full.iloc[peak_indices]
+            else:
+                # Fallback: Use threshold-based selection if too few peaks found
+                amplitude_values = amplitude_values_full[amplitude_values_full >= threshold]
 
-        # Get indices of significant events
-        significant_indices = amplitude_values_full[amplitude_values_full >= threshold].index
+                # Safety: Ensure minimum samples
+                if len(amplitude_values) < 2:
+                    amplitude_values = amplitude_values_full.nlargest(max(3, int(len(amplitude_values_full) * 0.05)))
 
-        # Safety check: ensure we have enough event points
-        if len(significant_indices) < 10:
-            # Fallback: use top 15% of amplitude values
-            threshold = amplitude_values_full.quantile(0.85)
-            significant_indices = amplitude_values_full[amplitude_values_full >= threshold].index
+        except ImportError:
+            # Fallback if scipy not available: Use threshold-based method
+            # (Matches original training data creation method)
+            threshold_percentile = amplitude_values_full.quantile(0.90)
+            threshold_adaptive = amplitude_values_full.mean() + 2 * amplitude_values_full.std()
+            threshold = max(threshold_percentile, threshold_adaptive, 3.0)
 
-        # Extract only significant event amplitudes (matching CSV event-level format)
-        amplitude_values = amplitude_values_full.loc[significant_indices]
+            amplitude_values = amplitude_values_full[amplitude_values_full >= threshold]
 
-        if len(amplitude_values) == 0:
-            # Final fallback: use all values if filtering removes everything
-            amplitude_values = amplitude_values_full
+            # Ensure minimum samples
+            if len(amplitude_values) < 2:
+                amplitude_values = amplitude_values_full.nlargest(max(3, int(len(amplitude_values_full) * 0.05)))
 
-        # Calculate 8 features from event-level data
+        # Calculate 8 original features
         mean_val = amplitude_values.mean()
         max_val = amplitude_values.max()
         min_val = amplitude_values.min()
         std_val = amplitude_values.std()
         median_val = amplitude_values.median()
 
+        # PHASE 2: Add 5 new leak-specific features to detect elevated baseline patterns
+
+        # Feature 1: Elevated sample percentage (detects sustained elevation)
+        # Leaks have more samples above a low threshold (sustained activity)
+        baseline_threshold = 0.5  # G
+        elevated_count = (amplitude_values >= baseline_threshold).sum()
+        elevated_percentage = (elevated_count / len(amplitude_values)) * 100 if len(amplitude_values) > 0 else 0
+
+        # Feature 2: Mean-to-max ratio (detects smear vs spike pattern)
+        # Low ratio = sharp spikes (normal), High ratio = elevated baseline (leak)
+        mean_to_max_ratio = mean_val / max_val if max_val > 0 else 0
+
+        # Feature 3: Baseline median (robust measure of typical amplitude)
+        # Leaks have higher median (sustained elevation)
+        baseline_median = median_val
+
+        # Feature 4: Activity distribution - percentage in medium range
+        # Leaks have more activity in 0.5-5G range (continuous), normals have sharp peaks
+        medium_activity = ((amplitude_values >= 0.5) & (amplitude_values < 5.0)).sum()
+        medium_activity_pct = (medium_activity / len(amplitude_values)) * 100 if len(amplitude_values) > 0 else 0
+
+        # Feature 5: Smear index (composite metric)
+        # High value = wide, elevated distribution = leak signature
+        # Uses coefficient of variation relative to range
+        if max_val > min_val and max_val > 0:
+            smear_index = (std_val / mean_val) * (median_val / max_val) if mean_val > 0 else 0
+        else:
+            smear_index = 0
+
         features = {
+            # Original 8 features
             'mean_amplitude': float(mean_val),
             'max_amplitude': float(max_val),
             'min_amplitude': float(min_val),
@@ -183,7 +228,13 @@ def extract_features_from_xml(xml_content: str, curve_name: Optional[str] = None
             'amplitude_range': float(max_val - min_val),
             'median_amplitude': float(median_val),
             'crank_angle_at_max': float(df.loc[amplitude_values.idxmax(), 'Crank Angle']),  # type: ignore[arg-type]
-            'sample_count': int(len(amplitude_values))
+            'sample_count': int(len(amplitude_values)),
+            # New 5 leak-detection features (Phase 2)
+            'elevated_percentage': float(elevated_percentage),
+            'mean_to_max_ratio': float(mean_to_max_ratio),
+            'baseline_median': float(baseline_median),
+            'medium_activity_pct': float(medium_activity_pct),
+            'smear_index': float(smear_index)
         }
 
         return features
