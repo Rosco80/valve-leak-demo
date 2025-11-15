@@ -211,6 +211,35 @@ def extract_features_from_xml(xml_content: str, curve_name: Optional[str] = None
         # 5. Smear index: std deviation of amplitude values (leak = low variance smear)
         smear_index = std_val / mean_val if mean_val > 0 else 0
 
+        # PHASE 3: Pattern Detection Features (Smear vs Spike)
+        # Based on client documentation showing continuous smear (leak) vs discrete spikes (normal)
+
+        # 6. Continuity Ratio: What % of samples are above median
+        # Smear pattern (leak): 60-80% above median (continuous elevation)
+        # Spike pattern (normal): 10-30% above median (discrete peaks)
+        above_median_count = (amplitude_values > median_val).sum()
+        continuity_ratio = above_median_count / len(amplitude_values) if len(amplitude_values) > 0 else 0
+
+        # 7. Spike Concentration Index: What % of samples are near maximum (>80% of max)
+        # Spike pattern (normal): HIGH concentration (5-15% near max, rest low)
+        # Smear pattern (leak): LOW concentration (<5% near max, distributed)
+        near_max_threshold = max_val * 0.8
+        near_max_count = (amplitude_values >= near_max_threshold).sum()
+        spike_concentration = near_max_count / len(amplitude_values) if len(amplitude_values) > 0 else 0
+
+        # 8. Baseline Elevation: Lower quartile (25th percentile) relative to max
+        # Smear pattern (leak): HIGH ratio (0.4-0.6) - even low values are elevated
+        # Spike pattern (normal): LOW ratio (0.0-0.2) - low values near zero
+        q25 = amplitude_values.quantile(0.25)
+        baseline_elevation = q25 / max_val if max_val > 0 else 0
+
+        # 9. IQR Score: Inter-quartile range relative to max amplitude
+        # Smear pattern (leak): SMALL IQR (values clustered around continuous level)
+        # Spike pattern (normal): LARGE IQR (wide variation from baseline to peaks)
+        q75 = amplitude_values.quantile(0.75)
+        iqr = q75 - q25
+        iqr_score = iqr / max_val if max_val > 0 else 0
+
         features = {
             # Original 8 features
             'mean_amplitude': float(mean_val),
@@ -222,12 +251,18 @@ def extract_features_from_xml(xml_content: str, curve_name: Optional[str] = None
             'crank_angle_at_max': float(df.loc[amplitude_values.idxmax(), 'Crank Angle']),  # type: ignore[arg-type]
             'sample_count': int(len(amplitude_values)),
 
-            # Additional 5 leak-detection features
+            # Phase 2: 5 leak-detection features
             'elevated_percentage': float(elevated_percentage),
             'mean_to_max_ratio': float(mean_to_max_ratio),
             'baseline_median': float(baseline_median),
             'medium_activity_pct': float(medium_activity_pct),
-            'smear_index': float(smear_index)
+            'smear_index': float(smear_index),
+
+            # Phase 3: 4 pattern detection features (smear vs spike)
+            'continuity_ratio': float(continuity_ratio),
+            'spike_concentration': float(spike_concentration),
+            'baseline_elevation': float(baseline_elevation),
+            'iqr_score': float(iqr_score)
         }
 
         return features
