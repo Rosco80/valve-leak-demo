@@ -183,41 +183,33 @@ def extract_features_from_xml(xml_content: str, curve_name: Optional[str] = None
             if len(amplitude_values) < 2:
                 amplitude_values = amplitude_values_full.nlargest(max(3, int(len(amplitude_values_full) * 0.05)))
 
-        # Calculate 8 original features
+        # Calculate 13 features for enhanced leak detection
         mean_val = amplitude_values.mean()
         max_val = amplitude_values.max()
         min_val = amplitude_values.min()
         std_val = amplitude_values.std()
         median_val = amplitude_values.median()
 
-        # PHASE 2: Add 5 new leak-specific features to detect elevated baseline patterns
+        # Additional leak-specific features
+        # 1. Elevated percentage: % of points above median (leak = sustained elevation)
+        elevated_count = (amplitude_values > median_val).sum()
+        elevated_percentage = (elevated_count / len(amplitude_values)) * 100
 
-        # Feature 1: Elevated sample percentage (detects sustained elevation)
-        # Leaks have more samples above a low threshold (sustained activity)
-        baseline_threshold = 0.5  # G
-        elevated_count = (amplitude_values >= baseline_threshold).sum()
-        elevated_percentage = (elevated_count / len(amplitude_values)) * 100 if len(amplitude_values) > 0 else 0
-
-        # Feature 2: Mean-to-max ratio (detects smear vs spike pattern)
-        # Low ratio = sharp spikes (normal), High ratio = elevated baseline (leak)
+        # 2. Mean-to-max ratio: leak = high ratio (smear), normal = low ratio (spikes)
         mean_to_max_ratio = mean_val / max_val if max_val > 0 else 0
 
-        # Feature 3: Baseline median (robust measure of typical amplitude)
-        # Leaks have higher median (sustained elevation)
-        baseline_median = median_val
+        # 3. Baseline median: Using lower 50% of values to establish baseline
+        lower_half = amplitude_values[amplitude_values <= median_val]
+        baseline_median = lower_half.median() if len(lower_half) > 0 else median_val
 
-        # Feature 4: Activity distribution - percentage in medium range
-        # Leaks have more activity in 0.5-5G range (continuous), normals have sharp peaks
-        medium_activity = ((amplitude_values >= 0.5) & (amplitude_values < 5.0)).sum()
-        medium_activity_pct = (medium_activity / len(amplitude_values)) * 100 if len(amplitude_values) > 0 else 0
+        # 4. Medium activity percentage: % of points in 50-90th percentile range
+        p50 = amplitude_values.quantile(0.50)
+        p90 = amplitude_values.quantile(0.90)
+        medium_activity = ((amplitude_values >= p50) & (amplitude_values <= p90)).sum()
+        medium_activity_pct = (medium_activity / len(amplitude_values)) * 100
 
-        # Feature 5: Smear index (composite metric)
-        # High value = wide, elevated distribution = leak signature
-        # Uses coefficient of variation relative to range
-        if max_val > min_val and max_val > 0:
-            smear_index = (std_val / mean_val) * (median_val / max_val) if mean_val > 0 else 0
-        else:
-            smear_index = 0
+        # 5. Smear index: std deviation of amplitude values (leak = low variance smear)
+        smear_index = std_val / mean_val if mean_val > 0 else 0
 
         features = {
             # Original 8 features
@@ -229,7 +221,8 @@ def extract_features_from_xml(xml_content: str, curve_name: Optional[str] = None
             'median_amplitude': float(median_val),
             'crank_angle_at_max': float(df.loc[amplitude_values.idxmax(), 'Crank Angle']),  # type: ignore[arg-type]
             'sample_count': int(len(amplitude_values)),
-            # New 5 leak-detection features (Phase 2)
+
+            # Additional 5 leak-detection features
             'elevated_percentage': float(elevated_percentage),
             'mean_to_max_ratio': float(mean_to_max_ratio),
             'baseline_median': float(baseline_median),
