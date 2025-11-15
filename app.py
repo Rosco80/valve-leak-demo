@@ -112,7 +112,7 @@ def rule_based_leak_detection(features):
     return is_leak, confidence, criteria, score
 
 # Header
-st.markdown('<div class="main-header">🔧 Valve Leak Detection System</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">Valve Leak Detection System</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-header">AI-Powered Proof-of-Concept Demo | Acoustic Emission Analysis</div>', unsafe_allow_html=True)
 
 # Introduction
@@ -141,7 +141,7 @@ with st.expander("ℹ️ About This Demo", expanded=False):
     - ✅ **Conservative**: Flags for inspection when systems disagree
     - ✅ **Best accuracy**: Combines ML sensitivity with rule-based precision
 
-    **Note:** This hybrid approach balances AI sophistication with interpretability, making it ideal for client demonstrations.
+    **Note:** This hybrid approach balances AI sophistication with interpretability.
     """)
 
 st.markdown("---")
@@ -507,8 +507,9 @@ else:
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; font-size: 0.9rem;'>
-    <p><strong>Monday Proof-of-Concept Demo</strong> | Free Preview (Not part of Week 1-4 pilot)</p>
+    <p><strong>Proof-of-Concept Demo</strong> | Preview</p>
     <p>AI-Powered Valve Leak Detection | Acoustic Emission Analysis</p>
-    <p>Next Steps: Week 2-4 Pilot → 20 features + Ensemble models → 85-88% accuracy target</p>
+    <p>Next Steps: 20 features + Ensemble models → 85-88% accuracy target</p>
 </div>
 """, unsafe_allow_html=True)
+
